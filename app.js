@@ -5,97 +5,65 @@ const readline = require('readline');
 const { performance } = require('perf_hooks');
 const { Worker } = require('worker_threads');
 const path = require('path');
-const sql = require("mssql/msnodesqlv8");
-const connection = new sql.ConnectionPool({
-  database: "TestDatabase",
-  server: "LAPTOP-33SI8OVS",
-  driver: "msnodesqlv8",
+require("./config");
+var sql = require('mssql');
+const config = {
+  server: 'LAPTOP-33SI8OVS',
+  database: 'TestDatabase',
   options: {
     trustedConnection: true,
     encrypt: true,
     trustServerCertificate: true
-  }
+  },
+};
+
+// define the endpoint
+app.get('/dbIO', (req, res) => {
+  sql.connect(config).then(() => {
+    // Query
+    return sql.query('SELECT * FROM PRODUCT');
+  }).then(result => {
+    console.log(result);
+  }).catch(err => {
+    console.log(err);
+  });
+  //try {
+    // connect to the database
+    //await sql.connect(config);
+
+    // execute a query
+    //const result = await sql.query`SELECT * FROM [dbo].[MyTable]`;
+
+    // close the connection
+    //await sql.close();
+
+    // send the result back to the client
+    //res.send(result.recordset);
+  //} catch (err) {
+    //console.error(err);
+    //res.status(500).send('Error connecting to the database');
+  //}
 });
 
-app.get('/databaseio', (req, res) => {
-  // Create and populate a list of 2000 Products
-  const products = [];
-  for (let i = 1; i <= 2000; i++) {
-    products.push({ Name: `Product${i}`, Description: `Description for Product${i}`, Price: i * 10 });
-  }
-
-  // Connect to the database
-  connection.connect().then(() => {
-    //Delete any existing data in the Products table
-    connection.query("DELETE FROM PRODUCT", (err, result) => {
-      if (err) {
-        console.log(err);
-        return;
-      }
-
-      // Start timer
-      const start = performance.now();
-
-      // Insert the list of products into the database using the Tedious library
-      const request = new sql.Request(connection);
-      connection.query("INSERT INTO PRODUCT (Name, Description, Price) VALUES (@Name, @Description, @Price)", products);
-
-        // Select all PRODUCT rows from the database and convert them to a list
-        const query = "SELECT * FROM PRODUCT";
-        request.query(query, (err, result) => {
-          if (err) {
-            console.log(err);
-            return;
-          }
-        });
-        
-        // Stop timer and calculate elapsed time
-        const end = new Date().getTime();
-        const elapsed = end - start;
-
-        // Send response with elapsed time
-        res.send(`${elapsed}`);
-    });
-  });
+app.listen(3000, () => {
+  console.log('Server listening on port 3000');
 });
 
-  app.get('/dbIO', function (req, res) {
-   
-    // Populate the list of 2000 products
-    const products = [];
-    for (let i = 1; i <= 2000; i++) {
-      products.push({ Name: `Product${i}`, Description: `Description for Product${i}`, Price: i * 10 });
-    }
+app.get('/dbIO', (req,res) => {
 
-    const start = performance.now();
+});
 
-    // connect to your database
-    connection.connect().then(() => {
-    });
-
-    const end = performance.now();
-
-    const elapsed = end - start;
-
-    res.send(`${elapsed}`);
-  });
-
-  app.listen(3000, () => {
-    console.log('Server listening on port 3000');
-  });
-  
+//Disc Input Output Performance Test
 app.get('/discIO', (req, res) => {
-    // Deletes "integers.csv" file if it already exists
+    // delete "integers.csv" file if it already exists
     if (fs.existsSync('integers.csv')) {
       fs.unlinkSync('integers.csv');
     }
   
-    // start timer
+    // get current timestamp
     const start = performance.now();
   
-    // size of integers array
     const size = 10000;
-  
     const integers = [];
     // integersList that will hold the result of reading the "integers.csv" file
     const integersList = [];
@@ -131,34 +99,36 @@ app.get('/discIO', (req, res) => {
       
           res.send(`${elapsed}`);
         });
-      }, 2); // Wait for 1 second (adjust this as needed)
+      });
 });
 
 app.get('/gc', (req, res) => {
-    const ObjectSizeInMB = 100;
-    const NumIterations = 10;
+
+  const ObjectSizeInMB = 100;
+  const NumIterations = 10;
+
+  // Allocate a large object in memory
+  const largeObject = Buffer.alloc(ObjectSizeInMB * 1024 * 1024);
   
-    // Allocate a large object in memory
-    const largeObject = Buffer.alloc(ObjectSizeInMB * 1024 * 1024);
+  // Peform an operation on the object
+  // Populate the object with integers
+  for (let i = 0; i < largeObject.length; i++) {
+    largeObject[i] = 1;
+  }
   
-    // Peforms an operation on the object
-    // Populates the object with integers
-    for (let i = 0; i < largeObject.length; i++) {
-      largeObject[i] = 1;
-    }
+  // Get initial timestamp
+  const start = performance.now();
   
-    // Starts timer
-    const start = performance.now();
+  // Force garbage collection and measure the time it takes to complete
+  for (let i = 0; i < NumIterations; i++) {
+    global.gc();
+  }
   
-    // Force garbage collection and measure the time it takes
-    for (let i = 0; i < NumIterations; i++) {
-      global.gc();
-    }
+  // Get final timestamp and calculate elapsed time
+  const end = performance.now();
+  const elapsed = end - start;
   
-    const end = performance.now();
-    const elapsed = end - start;
-  
-    res.send(`${elapsed}`);
+  res.send(`${elapsed}`);
 });
 
 
@@ -167,8 +137,10 @@ app.get('/tp', (req, res) => {
   const numIterations = 10000000;
   const threads = [];
   
+  // get initial timestamp
   const start = performance.now();
   
+  // start the threads
   for (let i = 0; i < numThreads; i++) {
     const worker = new Worker(path.join(__dirname, './worker.js'), { workerData: { numIterations } });
   
@@ -184,11 +156,13 @@ app.get('/tp', (req, res) => {
     threads.push(worker);
   }
   
+  // wait for the threads to complete
   let numThreadsCompleted = 0;
   for (let i = 0; i < numThreads; i++) {
     threads[i].on('message', () => {
       numThreadsCompleted++;
       if (numThreadsCompleted === numThreads) {
+          //get final timestamp and calculate total execution time
           const end = performance.now();
           const elapsed = end - start;
           res.send(`${elapsed}`);
